@@ -32,25 +32,27 @@ def getEvents():
     return [item.getText() for item in events]
 
 
-def getNewEvents(events):
+def getNewEvents(db, events):
     newEvents = []
     for event in events:
-        ourEvent = session.query(Event).filter_by(title=event)
-        if ourEvent is None:
-            session.add(Event(title=event, scrape_dt=datetime.now()))
-            session.commit()
+        query = db.query(Event).filter_by(title=event)
+        ourEvent = query.all()
+        if ourEvent == []:
+            db.add(Event(title=event, scrape_dt=datetime.now()))
+            db.commit()
             newEvents.append(event)
     return newEvents
 
 
-def delOldEvents(events):
+def delOldEvents(db, events):
     oldEvents = []
-    ourEvents = session.query(Event).filter(~Event.title.in_(events))
     # this finds events in the db that are not in my scraped list
-    if ourEvents is not None:
-        for event in ourEvents.all():
-            session.delete(event)
-            session.commit()
+    query = db.query(Event).filter(~Event.title.in_(events))
+    ourEvents = query.all()
+    if ourEvents != []:
+        for event in ourEvents:
+            db.delete(event)
+            db.commit()
             oldEvents.append(event.title)
     return oldEvents
 
@@ -65,21 +67,24 @@ class Event(Base):
     title = Column(String)
     scrape_dt = Column(Date)
 
+    def __init__(self, title, scrape_dt):
+        self.title = title
+        self.scrape_dt = scrape_dt
+
     def __repr__(self):
         return "<Event(title=%s, scrape_dt=%s)>" % (self.title, self.scrape_dt)
 
 
 try:
     engine = create_engine(DATABASE_URL)
-    Base.metadata.create_all(engine)
+    Base.metadata.create_all(engine, checkfirst=True)
     Session = sessionmaker(bind=engine)
     session = Session()
-
     event_list = getEvents()
-    new_events = getNewEvents(event_list)
+    new_events = getNewEvents(session, event_list)
     if new_events != []:
         sendNotification('New Events:\n' + '\n'.join(new_events))
-    old_events = delOldEvents(event_list)
+    old_events = delOldEvents(session, event_list)
     if old_events != []:
         sendNotification('Removed Events:\n' + '\n'.join(old_events))
 except Exception as e:
